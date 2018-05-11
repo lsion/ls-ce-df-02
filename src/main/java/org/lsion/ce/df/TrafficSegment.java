@@ -223,11 +223,13 @@ class TrafficSegment implements Serializable {
 	 public void toMutation(ProcessContext context) {
 			TrafficSegment segment = this;
 			DateTime ts = fmt.parseDateTime(segment.get_last_updt().replace(".0", ""));
+			System.err.println("last: "+segment.get_last_updt().replace(".0", ""));
+			System.err.println("ts: "+ts.getMillis());
 			
 			// key is SEGID#cityID#last_updt
 			 String key = segment.getSegmentid() //
 			            + "#" + segment.getCityID() //
-			            + "#" + segment.get_last_updt().replace(" ", "_");
+			            + "#" + segment.get_last_updt().replace(" ", "_").replace(".0", "");
 
 			 String comments = segment.get_comments();
 			// all the data is in a wide column table with only one column family
@@ -270,7 +272,8 @@ class TrafficSegment implements Serializable {
 		                      .setValue(value)//
 		                      .setFamilyName(CF_FAMILY)//
 		                      .setColumnQualifier(colname)//
-		                      .setTimestampMicros(ts) //
+		                     // .setTimestampMicros(ts) //
+		                      .setTimestampMicros(-1) //
 		              ).build();
 		      mutations.add(m);
 		    }

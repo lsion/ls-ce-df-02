@@ -157,7 +157,7 @@ public class TrafficSegmentBatchToBT {
 						} else {
 							// one segment
 							TrafficSegment trafficSegment = gson.fromJson(c.element().toString(), TrafficSegment.class);
-							System.err.println("------>>" + trafficSegment.toString());
+							System.err.println("****------>>" + trafficSegment.toString());
 							// TableRow row = trafficSegment.toTableRow();
 							// c.output(trafficSegment.toTableRow());
 							trafficSegment.toMutation(c);
@@ -196,62 +196,4 @@ public class TrafficSegmentBatchToBT {
 		mutations.apply("write:cbt", //
 				BigtableIO.write().withProjectId("lsion-151311").withInstanceId(INSTANCE_ID).withTableId(TABLE_ID).withoutValidation());
 	}
-
-	// public PCollection<KV<ByteString, Iterable<Mutation>>>
-	// toMutation(ProcessContext context, TrafficSegment segment) {
-
-	private void toMutation(ProcessContext context, TrafficSegment segment) {
-
-		DateTime ts = fmt.parseDateTime(segment.get_last_updt().replaceAll(".0", ""));
-		
-		System.err.println("------------> ts.getMillis())="+ts.getMillis());
-
-		// key is SEGID#cityID#last_updt
-		String key = segment.getSegmentid() //
-				+ "#" + segment.getCityID() //
-				+ "#" + segment.get_last_updt().replace(" ", "_").replaceAll(".0", "");
-
-		String comments = segment.get_comments();
-		// all the data is in a wide column table with only one column family
-		List<Mutation> mutations = new ArrayList<>();
-		addCell(mutations, "cityID", segment.getCityID(), ts.getMillis());
-		addCell(mutations, "countryCode", segment.getCountryCode(), ts.getMillis());
-		addCell(mutations, "comments", comments == null ? "" : comments, ts.getMillis());
-		addCell(mutations, "direction", segment.get_direction(), ts.getMillis());
-		addCell(mutations, "fromst", segment.get_fromst(), ts.getMillis());
-		addCell(mutations, "last_updt", segment.get_last_updt(), ts.getMillis());
-		addCell(mutations, "length", segment.get_length(), ts.getMillis());
-		addCell(mutations, "lif_lat", segment.get_lif_lat(), ts.getMillis());
-		addCell(mutations, "lit_lat", segment.get_lit_lat(), ts.getMillis());
-		addCell(mutations, "lit_lon", segment.get_lit_lon(), ts.getMillis());
-		addCell(mutations, "strheading", segment.get_strheading(), ts.getMillis());
-		addCell(mutations, "tost", segment.get_tost(), ts.getMillis());
-		addCell(mutations, "traffic", segment.get_traffic(), ts.getMillis());
-		addCell(mutations, "segmentid", segment.getSegmentid(), ts.getMillis());
-		addCell(mutations, "start_lon", segment.getStart_lon(), ts.getMillis());
-		addCell(mutations, "street", segment.getStreet(), ts.getMillis());
-		addCell(mutations, "city", segment.getCity(), ts.getMillis());
-		context.output(KV.of(ByteString.copyFromUtf8(key), mutations));
-	}
-
-	private static void addCell(List<Mutation> mutations, String cellName, double cellValue, long ts) {
-		addCell(mutations, cellName, Double.toString(cellValue), ts);
-	}
-
-	private static void addCell(List<Mutation> mutations, String cellName, String cellValue, long ts) {
-		if (cellValue.length() > 0) {
-			ByteString value = ByteString.copyFromUtf8(cellValue);
-			ByteString colname = ByteString.copyFromUtf8(cellName);
-			Mutation m = //
-					Mutation.newBuilder().setSetCell(//
-							Mutation.SetCell.newBuilder() //
-									.setValue(value)//
-									.setFamilyName(CF_FAMILY)//
-									.setColumnQualifier(colname)//
-									.setTimestampMicros(ts) //
-					).build();
-			mutations.add(m);
-		}
-	}
-
 }

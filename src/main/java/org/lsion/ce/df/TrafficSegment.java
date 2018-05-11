@@ -1,8 +1,14 @@
 package org.lsion.ce.df;
 
 import java.io.Serializable;
+
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.beam.sdk.transforms.DoFn.ProcessContext;
 import org.apache.beam.sdk.values.KV;
@@ -22,7 +28,7 @@ import org.joda.time.format.DateTimeFormatter;
  * @author lsion
  * Todo: AvroCoder... (Enum)
  */
-class TrafficSegment implements Serializable {
+public class TrafficSegment implements Serializable {
 	public static final String CHICAGO_CITY_ID = "1013962";
 	public static final String CHICAGO_CITY_NAME = "Chicago";
 	public static final String US_COUNTRY_CODE = "US";
@@ -30,28 +36,31 @@ class TrafficSegment implements Serializable {
 	public final String city = CHICAGO_CITY_NAME;
 	public final String countryCode = US_COUNTRY_CODE;
 	
+	public static final String CSV_HEADERS = 
+		"TIME,SEGMENT_ID,SPEED,STREET,DIRECTION,FROM_STREET,TO_STREET,LENGTH,STREET_HEADING,COMMENTS,BUS_COUNT,MESSAGE_COUNT,HOUR,DAY_OF_WEEK,MONTH,RECORD_ID,START_LATITUDE,START_LONGITUDE,END_LATITUDE,END_LONGITUDE,START_LOCATION,END_LOCATION,Community Areas,Zip Codes,Wards";		
+	public static final String[] KEYS = CSV_HEADERS.split(",");
+	
 	//BIGTABLE
 	private final static String CF_FAMILY   = "segtraffic";
 	
-	public String _comments = null;
-	public String _direction = null;
-	public String _fromst = null;
-	public String _last_updt = null;
-	public String _length = null;
-	public String _lif_lat = null;
-	public String _lit_lat = null;
-	public String _lit_lon = null;
-	public String _strheading = null;
-	public String _tost = null;
-	public String _traffic = null;
-	public String segmentid = null;
-	public String start_lon = null;
-	public String street = null;
+	private String _comments = null;
+	private String _direction = null;
+	private String _fromst = null;
+	private String _last_updt = null;
+	private String _length = null;
+	private String _lif_lat = null;
+	private String _lit_lat = null;
+	private String _lit_lon = null;
+	private String _strheading = null;
+	private String _tost = null;
+	private String _traffic = null;
+	private String segmentid;
+	private String start_lon;
+	private String street = null;
 
 	public TrafficSegment(String _comments, String _direction, String _fromst, String _last_updt, String _length,
 			String _lif_lat, String _lit_lat, String _lit_lon, String _strheading, String _tost, String _traffic,
 			String segmentid, String start_lon, String street) {
-		super();
 		this._comments = _comments;
 		this._direction = _direction;
 		this._fromst = _fromst;
@@ -66,6 +75,40 @@ class TrafficSegment implements Serializable {
 		this.segmentid = segmentid;
 		this.start_lon = start_lon;
 		this.street = street;
+		
+		System.out.println("NEW SEGMENT WITH ID:"+this.segmentid);
+		
+	}
+	public TrafficSegment(String csvValues) {
+		Map<String, String> segment = new HashMap<>();
+		String[] values = csvValues.split(",");
+		
+
+		if(KEYS.length != values.length) {
+			if(! (KEYS.length -1 == values.length && csvValues.endsWith(","))) {
+				throw new IllegalArgumentException("Invalid CSV values number in: "+csvValues);
+			}
+		}
+		//OK
+		
+		for (int i = 0; i < values.length; i++) {
+			segment.put(KEYS[i], values[i]);
+		}
+		
+		this._comments = segment.get("COMMENTS");
+		this._direction = segment.get("DIRECTION");
+		this._fromst = segment.get("FROM_STREET");
+		this._last_updt = segment.get("TIME");
+		this._length = segment.get("LENGTH");
+		this._lif_lat = segment.get("START_LATITUDE");
+		this._lit_lat = segment.get("END_LATITUDE");
+		this._lit_lon = segment.get("START_LATITUDE");
+		this._strheading = segment.get("DIRECTION");
+		this._tost = segment.get("TO_STREET");
+		this._traffic = segment.get("SPEED");
+		this.segmentid = segment.get("SEGMENT_ID");
+		this.start_lon = segment.get("START_LONGITUDE");
+		this.street = segment.get("STREET");
 	}
 
 	public String get_comments() {
@@ -194,7 +237,7 @@ class TrafficSegment implements Serializable {
 	
 	@Override
 	public String toString() {
-		return countryCode +", "+cityID +","+segmentid+", "+_last_updt;
+		return countryCode +", "+getCityID() +","+getSegmentid()+", "+get_last_updt();
 	}
 	
 	public TableRow toTableRow() {
@@ -219,15 +262,33 @@ class TrafficSegment implements Serializable {
 		row.set("city", city);
 		return row;	
 	}
-	private static DateTimeFormatter fmt = DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss");
 	 public void toMutation(ProcessContext context) {
 			TrafficSegment segment = this;
-			DateTime ts = fmt.parseDateTime(segment.get_last_updt().replace(".0", ""));
+			DateTime ts = null;
+			String key = null;
+			
+			DateTimeFormatter fmt = null;
+			
+			System.out.println("LAST : "+segment.get_last_updt());
+			
+			if(segment.get_last_updt().endsWith(".0")) {
+				fmt = DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss");
+				 ts = fmt.parseDateTime(segment.get_last_updt().replace(".0", ""));
+				 key = segment.getSegmentid() //
+				            + "#" + segment.getCityID() //
+				            + "#" + segment.get_last_updt().replace(" ", "_").replace(".0", "");
+			}else if(segment.get_last_updt().endsWith("M")){
+				fmt = DateTimeFormat.forPattern("MM/dd/yyyy hh:mm:ss a");
+				ts = fmt.parseDateTime(segment.get_last_updt());
+				// Format for output
+				DateTimeFormatter dtfOut = DateTimeFormat.forPattern("yyyy-MM-dd_HH:mm:ss");
+				 key = segment.getSegmentid() //
+				            + "#" + segment.getCityID() //
+				            + "#" + dtfOut.print(ts);
+				 System.err.println("KEY: "+key);
+			}
 			
 			// key is SEGID#cityID#last_updt
-			 String key = segment.getSegmentid() //
-			            + "#" + segment.getCityID() //
-			            + "#" + segment.get_last_updt().replace(" ", "_").replace(".0", "");
 
 			 String comments = segment.get_comments();
 			// all the data is in a wide column table with only one column family
@@ -276,5 +337,4 @@ class TrafficSegment implements Serializable {
 		      mutations.add(m);
 		    }
 		  }
-
 }

@@ -142,7 +142,7 @@ public class TrafficSegmentBatchDF {
     
     p.apply("ReadPubsub", PubsubIO.readStrings().fromTopic(options.getInputTopic()))
     
-    .apply(ParDo.of(new DoFn<Object, TableRow>() {
+    .apply("ParseJSON", ParDo.of(new DoFn<Object, TableRow>() {
         @ProcessElement
         public void processElement(ProcessContext c)  {
           LOG.info(c.element().toString());

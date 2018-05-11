@@ -54,8 +54,10 @@ import com.google.api.services.bigquery.model.JsonObject;
 import com.google.api.services.bigquery.model.TableCell;
 import com.google.api.services.bigquery.model.TableRow;
 import com.google.api.services.pubsub.model.PubsubMessage;
+import com.google.bigtable.v2.Mutation;
 import com.google.common.reflect.TypeToken;
 import com.google.gson.Gson;
+import com.google.protobuf.ByteString;
 /**
  * A starter example for writing Beam programs.
  *

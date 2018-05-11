@@ -50,7 +50,7 @@ public class StarterPipeline {
     Pipeline p = Pipeline.create(
         PipelineOptionsFactory.fromArgs(args).withValidation().create());
 
-    p.apply(Create.of("Hello", "World"))
+    p.apply(Create.of("Hello World"))
     .apply(MapElements.via(new SimpleFunction<String, String>() {
       @Override
       public String apply(String input) {

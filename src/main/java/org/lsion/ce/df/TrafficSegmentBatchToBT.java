@@ -115,20 +115,6 @@ public class TrafficSegmentBatchToBT {
 				.as(BatchTelemetryOptions.class);
 		Pipeline p = Pipeline.create(options);
 
-		/*
-		 * PCollection<String> input1 = p.apply( "ReadLines",
-		 * TextIO.read().from(options.getInputFile()));
-		 */
-
-		String rowStr = "{ \"n\":\"Sion\", \"p\":\"laurent\" , \"a\":41 }";
-		String segStr = "{\n" + "        \"_direction\": \"EB\",\n" + "        \"_fromst\": \"Pulaski\",\n"
-				+ "        \"_last_updt\": \"2018-05-10 14:50:27.0\",\n" + "        \"_length\": \"0.5\",\n"
-				+ "        \"_lif_lat\": \"41.7930671862\",\n" + "        \"_lit_lat\": \"41.793140551\",\n"
-				+ "        \"_lit_lon\": \"-87.7136071496\",\n" + "        \"_strheading\": \"W\",\n"
-				+ "        \"_tost\": \"Central Park\",\n" + "        \"_traffic\": \"20\",\n"
-				+ "        \"segmentid\": \"1\",\n" + "        \"start_lon\": \"-87.7231602513\",\n"
-				+ "        \"street\": \"55th\"\n" + "    }";
-
 		PCollection<KV<ByteString, Iterable<Mutation>>> mutations = p
 				.apply("ReadPubsub", PubsubIO.readStrings().fromTopic(options.getInputTopic()))
 				.apply(ParDo.of(new DoFn<Object, KV<ByteString, Iterable<Mutation>>>() {
@@ -136,11 +122,7 @@ public class TrafficSegmentBatchToBT {
 					public void processElement(ProcessContext c) {
 						LOG.info(c.element().toString());
 						Gson gson = new Gson();
-						/*
-						 * TrafficSegment segment = new TrafficSegment( "comment", "EB", "Pulaski",
-						 * "2018-05-10 14:50:27.0", "0.5", "41.7930671862", "41.793140551",
-						 * "-87.7136071496", "W", "Central Park", "20", "1", "-87.7231602513", "55th");
-						 */
+
 						if (c.element().toString().startsWith("[")) {
 							// Array
 							Type collectionType = new TypeToken<Collection<TrafficSegment>>() {
@@ -148,51 +130,45 @@ public class TrafficSegmentBatchToBT {
 							Collection<TrafficSegment> segments = gson.fromJson(c.element().toString(), collectionType);
 							int i = 0;
 							for (Iterator iterator = segments.iterator(); iterator.hasNext();) {
-								TrafficSegment trafficSegment = (TrafficSegment) iterator.next();
-								System.err.println("[" + ++i + "]" + "------>>" + trafficSegment.toString());
-								trafficSegment.toMutation(c);
-								// c.output(trafficSegment.toTableRow());
-
+								//TrafficSegment trafficSegment = (TrafficSegment) iterator.next();
+								//System.err.println("[" + ++i + "]" + "------>>" + trafficSegment.toString());
+								((TrafficSegment) iterator.next()).toMutation(c);
+								++i;
 							}
+							LOG.info(i + " segments prepared for BT insertion.");
 						} else {
 							// one segment
 							TrafficSegment trafficSegment = gson.fromJson(c.element().toString(), TrafficSegment.class);
-							System.err.println("****------>>" + trafficSegment.toString());
-							// TableRow row = trafficSegment.toTableRow();
-							// c.output(trafficSegment.toTableRow());
+							//System.err.println("****------>>" + trafficSegment.toString());
+							LOG.info("Segment prepared for BT insertion: "+trafficSegment.toString());
 							trafficSegment.toMutation(c);
 						}
 					}
 				}));
-
+		
 		writeToBigtable(mutations, options);
-		/*
-		 * .apply("WriteBigQuery", BigQueryIO.writeTableRows().withoutValidation()
-		 * .withCreateDisposition(BigQueryIO.Write.CreateDisposition.CREATE_NEVER)
-		 * .to("lsion-151311:Sample.segments"));
-		 */
-
 		p.run();
+		LOG.info("Pipeline ready.");
 	}
 
 	// BIGTABLE UTILS
 
 	public static void writeToBigtable(PCollection<KV<ByteString, Iterable<Mutation>>> mutations,
 			BatchTelemetryOptions options) {
-		BigtableOptions.Builder optionsBuilder = //
+		LOG.info("BT setup...");
+		/*BigtableOptions.Builder optionsBuilder = //
 				new BigtableOptions.Builder()//
 						.setProjectId("lsion-151311")//options.getProject()) //
-						.setInstanceId(INSTANCE_ID).setUserAgent("101258083480215606780");
-		optionsBuilder.setProjectId("lsion-151311");
+						.setInstanceId(INSTANCE_ID).setUserAgent("101258083480215606780");*/
+		//optionsBuilder.setProjectId("lsion-151311");
 		// batch up requests to Bigtable every 100ms, although this can be changed
 		// by specifying a lower/higher value for
 		// BIGTABLE_BULK_THROTTLE_TARGET_MS_DEFAULT
-		BulkOptions bulkOptions = new BulkOptions.Builder().enableBulkMutationThrottling().build();
-		optionsBuilder = optionsBuilder.setBulkOptions(bulkOptions);
+		//BulkOptions bulkOptions = new BulkOptions.Builder().enableBulkMutationThrottling().build();
+		//optionsBuilder = optionsBuilder.setBulkOptions(bulkOptions);
 
-		// createEmptyTable(options, optionsBuilder);
-		//mutations.apply("write:cbt", //
-		//		BigtableIO.write().withBigtableOptions(optionsBuilder.build()).withTableId(TABLE_ID));
+
+		LOG.info("Project (hard coded): lsion-151311, BT instance: "+INSTANCE_ID+", BT table ID: "+TABLE_ID);
 		mutations.apply("write:cbt", //
 				BigtableIO.write().withProjectId("lsion-151311").withInstanceId(INSTANCE_ID).withTableId(TABLE_ID).withoutValidation());
 	}

@@ -223,8 +223,6 @@ class TrafficSegment implements Serializable {
 	 public void toMutation(ProcessContext context) {
 			TrafficSegment segment = this;
 			DateTime ts = fmt.parseDateTime(segment.get_last_updt().replace(".0", ""));
-			System.err.println("last: "+segment.get_last_updt().replace(".0", ""));
-			System.err.println("ts: "+ts.getMillis());
 			
 			// key is SEGID#cityID#last_updt
 			 String key = segment.getSegmentid() //

@@ -17,9 +17,13 @@
  */
 package org.lsion.ce.df;
 
+import java.lang.reflect.Type;
+import java.util.Collection;
+import java.util.Iterator;
+
 import org.apache.beam.sdk.Pipeline;
-import org.apache.beam.sdk.io.TextIO;
 import org.apache.beam.sdk.io.gcp.bigtable.BigtableIO;
+import org.apache.beam.sdk.io.gcp.pubsub.PubsubIO;
 import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptions;
@@ -34,6 +38,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.bigtable.v2.Mutation;
+import com.google.cloud.bigtable.config.BigtableOptions;
+import com.google.cloud.bigtable.config.BulkOptions;
+import com.google.common.reflect.TypeToken;
+import com.google.gson.Gson;
 import com.google.protobuf.ByteString;
 
 /**
@@ -53,31 +61,11 @@ import com.google.protobuf.ByteString;
  * --project=<YOUR_PROJECT_ID>
  * --stagingLocation=<STAGING_LOCATION_IN_CLOUD_STORAGE> --runner=DataflowRunner
  */
-public class CSV2BTSegmentDF {
-	private static final Logger LOG = LoggerFactory.getLogger(CSV2BTSegmentDF.class);
+public class PubSubJSON2BTSegmentDF {
+	private static final Logger LOG = LoggerFactory.getLogger(PubSubJSON2BTSegmentDF.class);
 	// BIGTABLE
 
-	private final static String CF_FAMILY = "segtraffic";
-	private static DateTimeFormatter fmt = DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss");
-
-	public interface CSV2BTSegmentDFOptions extends PipelineOptions {
-
-		/**
-		 * By default, this example reads from a public dataset containing the text of
-		 * King Lear. Set this option to choose a different input file or glob.
-		 */
-		@Description("Path of the file to read from")
-		@Default.String("gs://apache-beam-samples/shakespeare/kinglear.txt")
-		String getInputFile();
-		void setInputFile(String value);
-
-		
-
-		@Description("The Cloud Pub/Sub topic to read from.")
-		@Default.String("")
-		String getInputTopic();
-		void setInputTopic(String value);
-
+	public interface BatchTelemetryOptions extends PipelineOptions {		
 		/**
 		 * Set this required option to specify where to write the output.
 		 */
@@ -98,34 +86,46 @@ public class CSV2BTSegmentDF {
 		@Description("BigTable table ID.")
 		String getbTTableID();
 		void setbTTableID(String value);
+
+		@Description("The Cloud Pub/Sub topic to read from.")
+		@Default.String("")
+		String getInputTopic();
+		void setInputTopic(String value);
 	}
 
 	public static void main(String[] args) {
-		CSV2BTSegmentDFOptions options = PipelineOptionsFactory.fromArgs(args).withValidation()
-				.as(CSV2BTSegmentDFOptions.class);
+		BatchTelemetryOptions options = PipelineOptionsFactory.fromArgs(args).withValidation()
+				.as(BatchTelemetryOptions.class);
 		Pipeline p = Pipeline.create(options);
-		
-		PCollection<KV<ByteString, Iterable<Mutation>>> mutations = p.apply(
-	    		  "ReadLines", TextIO.read().from(options.getInputFile()))
-				.apply("ParseCSV", ParDo.of(new DoFn<Object, KV<ByteString, Iterable<Mutation>>>() {
+
+		PCollection<KV<ByteString, Iterable<Mutation>>> mutations = p
+				.apply("ReadPubsub", PubsubIO.readStrings().fromTopic(options.getInputTopic()))
+				.apply("ParseJSON", ParDo.of(new DoFn<Object, KV<ByteString, Iterable<Mutation>>>() {
 					@ProcessElement
 					public void processElement(ProcessContext c) {
 						LOG.info(c.element().toString());
-												String line = c.element().toString();
-						if(line.startsWith("TIME")) {
-							//header line
-							//skip
-							c= null;
-						}else {
-							TrafficSegment trafficSegment = new TrafficSegment(line);
-							//LOG.info("Line: "+line);
+						Gson gson = new Gson();
+
+						if (c.element().toString().startsWith("[")) {
+							// Array
+							Type collectionType = new TypeToken<Collection<TrafficSegment>>() {
+							}.getType();
+							Collection<TrafficSegment> segments = gson.fromJson(c.element().toString(), collectionType);
+							int i = 0;
+							for (Iterator iterator = segments.iterator(); iterator.hasNext();) {
+								((TrafficSegment) iterator.next()).toMutation(c);
+								++i;
+							}
+							LOG.info(i + " segments prepared for BT insertion.");
+						} else {
+							// one segment
+							TrafficSegment trafficSegment = gson.fromJson(c.element().toString(), TrafficSegment.class);
 							LOG.info("Segment prepared for BT insertion: "+trafficSegment.toString());
-							;
 							trafficSegment.toMutation(c);
 						}
 					}
 				}));
-
+		
 		writeToBigtable(mutations, options);
 		p.run();
 		LOG.info("Pipeline ready.");
@@ -134,24 +134,25 @@ public class CSV2BTSegmentDF {
 	// BIGTABLE UTILS
 
 	public static void writeToBigtable(PCollection<KV<ByteString, Iterable<Mutation>>> mutations,
-			CSV2BTSegmentDFOptions options) {
+			BatchTelemetryOptions options) {
 		LOG.info("BT setup...");
-		/*BigtableOptions.Builder optionsBuilder = //
+		BigtableOptions.Builder optionsBuilder = //
 				new BigtableOptions.Builder()//
-						.setProjectId("lsion-151311")//options.getProject()) //
-						.setInstanceId(INSTANCE_ID).setUserAgent("101258083480215606780");*/
+						.setProjectId("lsion-151311");//options.getProject()) //
+						
 		//optionsBuilder.setProjectId("lsion-151311");
 		// batch up requests to Bigtable every 100ms, although this can be changed
 		// by specifying a lower/higher value for
 		// BIGTABLE_BULK_THROTTLE_TARGET_MS_DEFAULT
-		//BulkOptions bulkOptions = new BulkOptions.Builder().enableBulkMutationThrottling().build();
-		//optionsBuilder = optionsBuilder.setBulkOptions(bulkOptions);
+		BulkOptions bulkOptions = new BulkOptions.Builder().enableBulkMutationThrottling().build();
+		optionsBuilder = optionsBuilder.setBulkOptions(bulkOptions);
 
 		LOG.info("Project: "+options.getbTProjectID()+", BT instance: "+options.getbTInstanceID()+", BT table ID: "+options.getbTTableID());
 		mutations.apply("WriteBigTable", //
 				BigtableIO.write().withProjectId(options.getbTProjectID())
 				.withInstanceId(options.getbTInstanceID())
 				.withTableId(options.getbTTableID())
+				.withBigtableOptions(optionsBuilder)
 				.withoutValidation());
 	}
 }

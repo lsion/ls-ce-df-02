@@ -17,17 +17,14 @@
  */
 package org.lsion.ce.df;
 
-import java.lang.reflect.Type;
-import java.util.Collection;
-import java.util.Iterator;
-
 import org.apache.beam.sdk.Pipeline;
+import org.apache.beam.sdk.io.TextIO;
 import org.apache.beam.sdk.io.gcp.bigtable.BigtableIO;
-import org.apache.beam.sdk.io.gcp.pubsub.PubsubIO;
 import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.beam.sdk.options.ValueProvider;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.values.KV;
@@ -38,8 +35,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.bigtable.v2.Mutation;
-import com.google.common.reflect.TypeToken;
-import com.google.gson.Gson;
 import com.google.protobuf.ByteString;
 
 /**
@@ -59,87 +54,73 @@ import com.google.protobuf.ByteString;
  * --project=<YOUR_PROJECT_ID>
  * --stagingLocation=<STAGING_LOCATION_IN_CLOUD_STORAGE> --runner=DataflowRunner
  */
-public class TrafficSegmentBatchToBT {
-	private static final Logger LOG = LoggerFactory.getLogger(TrafficSegmentBatchToBT.class);
+public class CSV2BTSegmentDFCloud {
+	private static final Logger LOG = LoggerFactory.getLogger(CSV2BTSegmentDFCloud.class);
 	// BIGTABLE
-	private final static String INSTANCE_ID = "ls-ce-bt";
-	private final static String TABLE_ID = "segments";
-	private final static String CF_FAMILY = "segtraffic";
-	private static DateTimeFormatter fmt = DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss");
 
-	public interface BatchTelemetryOptions extends PipelineOptions {
+	public interface CSV2BTSegmentDFOptions extends PipelineOptions {
 
 		/**
 		 * By default, this example reads from a public dataset containing the text of
 		 * King Lear. Set this option to choose a different input file or glob.
 		 */
 		@Description("Path of the file to read from")
-		@Default.String("gs://apache-beam-samples/shakespeare/kinglear.txt")
-		String getInputFile();
+		ValueProvider<String> getInputFile();
+		void setInputFile(ValueProvider<String> value);
 
-		void setInputFile(String value);
+		@Description("The Cloud Pub/Sub topic to read from.")
+		@Default.String("")
+		ValueProvider<String> getInputTopic();
+		void setInputTopic(ValueProvider<String> value);
 
 		/**
 		 * Set this required option to specify where to write the output.
 		 */
-		@Description("Path of the file to write to")
-		String getOutput();
+		@Description("BigTable project ID.")
+		ValueProvider<String> getbTProjectID();
+		void setbTProjectID(ValueProvider<String> value);
 
-		void setOutput(String value);
-
-		@Description("The Cloud Pub/Sub topic to read from.")
-		@Default.String("")
-		String getInputTopic();
-
-		void setInputTopic(String value);
-
-		@Description("GCS path to javascript fn for transforming output")
-		String getJavascriptTextTransformGcsPath();
-
-		void setJavascriptTextTransformGcsPath(String jsTransformPath);
-
-		@Description("UDF Javascript Function Name")
-		String getJavascriptTextTransformFunctionName();
-
-		void setJavascriptTextTransformFunctionName(String javascriptTextTransformFunctionName);
+		/**
+		 * Set this required option to specify where to write the output.
+		 */
+		@Description("BigTable instance ID.")
+		ValueProvider<String> getbTInstanceID();
+		void setbTInstanceID(ValueProvider<String> value);
+		
+		/**
+		 * Set this required option to specify where to write the output.
+		 */
+		@Description("BigTable table ID.")
+		ValueProvider<String> getbTTableID();
+		void setbTTableID(ValueProvider<String> value);
 	}
 
 	public static void main(String[] args) {
-		BatchTelemetryOptions options = PipelineOptionsFactory.fromArgs(args).withValidation()
-				.as(BatchTelemetryOptions.class);
+		CSV2BTSegmentDFOptions options = PipelineOptionsFactory.fromArgs(args)
+				.as(CSV2BTSegmentDFOptions.class);
 		Pipeline p = Pipeline.create(options);
-
-		PCollection<KV<ByteString, Iterable<Mutation>>> mutations = p
-				.apply("ReadPubsub", PubsubIO.readStrings().fromTopic(options.getInputTopic()))
-				.apply(ParDo.of(new DoFn<Object, KV<ByteString, Iterable<Mutation>>>() {
+		
+		PCollection<KV<ByteString, Iterable<Mutation>>> mutations = p.apply(
+	    		  "ReadLines", TextIO.read().from(options.getInputFile()))
+				.apply("ParseCSV", ParDo.of(new DoFn<Object, KV<ByteString, Iterable<Mutation>>>() {
 					@ProcessElement
 					public void processElement(ProcessContext c) {
 						LOG.info(c.element().toString());
-						Gson gson = new Gson();
-
-						if (c.element().toString().startsWith("[")) {
-							// Array
-							Type collectionType = new TypeToken<Collection<TrafficSegment>>() {
-							}.getType();
-							Collection<TrafficSegment> segments = gson.fromJson(c.element().toString(), collectionType);
-							int i = 0;
-							for (Iterator iterator = segments.iterator(); iterator.hasNext();) {
-								//TrafficSegment trafficSegment = (TrafficSegment) iterator.next();
-								//System.err.println("[" + ++i + "]" + "------>>" + trafficSegment.toString());
-								((TrafficSegment) iterator.next()).toMutation(c);
-								++i;
-							}
-							LOG.info(i + " segments prepared for BT insertion.");
-						} else {
-							// one segment
-							TrafficSegment trafficSegment = gson.fromJson(c.element().toString(), TrafficSegment.class);
-							//System.err.println("****------>>" + trafficSegment.toString());
+												String line = c.element().toString();
+						if(line.startsWith("TIME")) {
+							//header line
+							//skip
+							c= null;
+						}else {
+							TrafficSegment trafficSegment = new TrafficSegment(line);
+							//LOG.info("Line: "+line);
 							LOG.info("Segment prepared for BT insertion: "+trafficSegment.toString());
+							;
 							trafficSegment.toMutation(c);
 						}
 					}
 				}));
-		
+
 		writeToBigtable(mutations, options);
 		p.run();
 		LOG.info("Pipeline ready.");
@@ -148,7 +129,7 @@ public class TrafficSegmentBatchToBT {
 	// BIGTABLE UTILS
 
 	public static void writeToBigtable(PCollection<KV<ByteString, Iterable<Mutation>>> mutations,
-			BatchTelemetryOptions options) {
+			CSV2BTSegmentDFOptions options) {
 		LOG.info("BT setup...");
 		/*BigtableOptions.Builder optionsBuilder = //
 				new BigtableOptions.Builder()//
@@ -161,9 +142,11 @@ public class TrafficSegmentBatchToBT {
 		//BulkOptions bulkOptions = new BulkOptions.Builder().enableBulkMutationThrottling().build();
 		//optionsBuilder = optionsBuilder.setBulkOptions(bulkOptions);
 
-
-		LOG.info("Project (hard coded): lsion-151311, BT instance: "+INSTANCE_ID+", BT table ID: "+TABLE_ID);
-		mutations.apply("write:cbt", //
-				BigtableIO.write().withProjectId("lsion-151311").withInstanceId(INSTANCE_ID).withTableId(TABLE_ID).withoutValidation());
+		LOG.info("Project: "+options.getbTProjectID()+", BT instance: "+options.getbTInstanceID()+", BT table ID: "+options.getbTTableID());
+		mutations.apply("WriteBigTable", //
+				BigtableIO.write().withProjectId(options.getbTProjectID())
+				.withInstanceId(options.getbTInstanceID())
+				.withTableId(options.getbTTableID())
+				.withoutValidation());
 	}
 }

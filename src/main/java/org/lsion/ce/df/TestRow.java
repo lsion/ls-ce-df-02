@@ -24,10 +24,18 @@ public class TestRow{
 		//System.err.println("DATE: "+LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd hh.mm.ss")));
 		//System.err.println("DATE: "+LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM/dd/yyyy hh:mm a")));
 		
-		DateTimeFormatter fmt = DateTimeFormat.forPattern("MM/dd/yyyy hh:mm:ss a");
-		System.err.println("DATE :"+fmt.parseDateTime("02/28/2018 05:01:00 PM")+", "+fmt.parseDateTime("02/28/2018 05:01:00 PM").getMillis());
-	    // specify that we want to search for two groups in the string
+		DateTimeFormatter fmt = DateTimeFormat.forPattern("yyyy-MM-dd_HH:mm:ss");
+		//System.err.println("DATE :"+fmt.parseDateTime("02/28/2018 05:01:00 PM")+", "+fmt.parseDateTime("02/28/2018 05:01:00 PM").getMillis());
+	    
+		
+		DateTimeFormatter dtfOut = DateTimeFormat.forPattern("yyyy-MM-dd_hh:mm:ss.S a");
+System.out.println("->>>"+dtfOut.print(fmt.parseDateTime("2010-07-21_14:51:09")));
+		
+		
+		// specify that we want to search for two groups in the string
 	    Pattern p = Pattern.compile("POINT \\((.*)\\s(.*)\\)");
+	    
+	    
 	    Matcher m = p.matcher(otherInput);
 
 	    // if our pattern matches the string, we can try to extract our groups

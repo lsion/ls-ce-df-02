@@ -269,7 +269,6 @@ public class TrafficSegment implements Serializable {
 			
 			DateTimeFormatter fmt = null;
 			
-			System.out.println("LAST : "+segment.get_last_updt());
 			
 			if(segment.get_last_updt().endsWith(".0")) {
 				fmt = DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss");
@@ -285,11 +284,12 @@ public class TrafficSegment implements Serializable {
 				 key = segment.getSegmentid() //
 				            + "#" + segment.getCityID() //
 				            + "#" + dtfOut.print(ts);
-				 System.err.println("KEY: "+key);
+				 dtfOut = DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss.S");
+				 segment.set_last_updt(dtfOut.print(ts));
 			}
 			
 			// key is SEGID#cityID#last_updt
-
+System.err.println("KEY: "+key);
 			 String comments = segment.get_comments();
 			// all the data is in a wide column table with only one column family
 		        List<Mutation> mutations = new ArrayList<>();
@@ -312,7 +312,6 @@ public class TrafficSegment implements Serializable {
 				addCell(mutations, "city", segment.getCity(), ts.getMillis());
 				context.output(KV.of(ByteString.copyFromUtf8(key), mutations));
 		}
-	  
 
 	//BIGTABLE UTILS
 	

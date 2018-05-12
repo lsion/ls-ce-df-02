@@ -1,0 +1,36 @@
+{
+  "name": "csv2bt",
+  "description": "A pipeline that reads traffic segment from CSV file and stores them in a BigTable table.",
+  "parameters": [{
+    "name": "inputFile",
+    "label": "Input Cloud Storage File(s)",
+    "help_text": "Path of the file pattern glob to read from.",
+    "regexes": ["^gs:\/\/[^\n\r]+$"],
+    "is_optional": false
+  },
+  {
+    "name": "project",
+    "label": "The GCP project ID",
+    "help_text": "GCP project ID.",
+       "is_optional": false
+  },
+   {
+    "name": "bTInstanceID",
+    "label": "BigTable instance ID",
+    "help_text": "BigTable instance ID.",
+       "is_optional": false
+  },
+   {
+    "name": "bTTableID",
+    "label": "BigTable table ID",
+    "help_text": "BigTable table ID.",
+       "is_optional": false
+ },   {
+    "name": "bTProjectID",
+    "label": "BigTable project ID",
+    "help_text": "BigTable project ID.",
+       "is_optional": false
+  }
+
+  ]
+}
